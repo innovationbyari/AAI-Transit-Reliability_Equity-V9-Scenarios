@@ -66,11 +66,56 @@ def load_core():
     if app_dir not in sys.path:
         sys.path.insert(0, app_dir)
     os.chdir(app_dir)                               # the engine writes transit_outputs/ next to the app
-    from transit_ai import load
     import team as T
-    tc = load(verbose=False)
+    tc = load_engine(app_dir)
     T.setup(tc)
     return tc, T
+
+
+def load_engine(app_dir):
+    """Run the notebook's section modules, in notebook order, in ONE shared namespace (like the notebook).
+    Works whether the modules are in a transit_ai/ folder or (after a GitHub web upload flattens folders) next to this file."""
+    import builtins
+    import json
+    import types
+    found = [d for d in (os.path.join(app_dir, "transit_ai"), app_dir) if os.path.isfile(os.path.join(d, "_modules.json"))]
+    if not found:
+        st.error("The engine files are missing: `_modules.json` and the section files (`engine.py`, `case_store.py`, …) "
+                 "must be in the repository, either in a `transit_ai/` folder or next to `app_streamlit.py`.")
+        st.code("\n".join(sorted(os.listdir(app_dir))))
+        st.stop()
+    mod_dir = found[0]
+    names = json.load(open(os.path.join(mod_dir, "_modules.json"), encoding="utf-8"))
+    missing = [n for n in names if not os.path.isfile(os.path.join(mod_dir, f"{n}.py"))]
+    if missing:
+        st.error("These engine files are missing from the repository: " + ", ".join(f"`{n}.py`" for n in missing))
+        st.stop()
+
+    def param(name, default):                       # notebook form fields → environment-variable overrides
+        raw = os.getenv(name)
+        if raw is None or raw == "":
+            return default
+        if isinstance(default, bool):
+            return raw.strip().lower() in ("1", "true", "yes", "on")
+        if isinstance(default, int):
+            return int(raw)
+        if isinstance(default, float):
+            return float(raw)
+        return raw
+
+    import matplotlib
+    matplotlib.use("Agg")
+    rt = types.ModuleType("transit_ai.runtime")
+    rt.__file__ = os.path.join(mod_dir, "_modules.json")
+    sys.modules[rt.__name__] = rt                   # pydantic / dataclasses resolve annotations through sys.modules
+    ns = rt.__dict__
+    ns.update(param=param, USE_OLLAMA=param("USE_OLLAMA", False), OLLAMA_MODEL=param("OLLAMA_MODEL", "llama3.2:3b"),
+              print=lambda *a, **k: None)
+    for n in names:
+        path = os.path.join(mod_dir, f"{n}.py")
+        exec(compile(open(path, encoding="utf-8").read(), path, "exec"), ns)
+        ns["display"] = lambda *a, **k: None        # notebook display() calls do nothing on the server
+    return rt
 
 
 tc, T = load_core()
