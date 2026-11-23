@@ -1,0 +1,12 @@
+# Streamlit Community Cloud installs these. Scenario mode needs no camera model, no FLAN-T5 and no NJ Transit login.
+streamlit==1.67.0
+pandas
+numpy
+requests
+pydantic>=2
+matplotlib
+plotly
+folium
+markdown
+ipython             # the notebook's Section B imports IPython.display; nothing is displayed by it on the server
+ipywidgets          # the notebook's Section B imports it; nothing is displayed by it on the server
